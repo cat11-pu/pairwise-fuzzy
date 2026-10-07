@@ -100,7 +100,7 @@ def ngrams(text, n=DEFAULT_NGRAM):
     n = _check_n(n)
     if len(text) < n:
         return frozenset() if not text else frozenset([text])
-    return frozenset(text[i:i + n] for i in range(len(text) - n))
+    return frozenset(text[i:i + n] for i in range(len(text) - n + 1))
 
 
 def _as_gram_set(values):
@@ -117,8 +117,10 @@ def jaccard(left, right):
     """
     left = _as_gram_set(left)
     right = _as_gram_set(right)
-    if not left or not right:
+    if not left and not right:
         return 1.0
+    if not left or not right:
+        return 0.0
     return len(left & right) / len(left | right)
 
 
@@ -132,7 +134,7 @@ def dice(left, right):
     total = len(left) + len(right)
     if total == 0:
         return 1.0
-    return float(len(left & right)) / total
+    return 2.0 * len(left & right) / total
 
 
 def common_prefix_length(left, right):
@@ -156,12 +158,15 @@ def _length_gap(left, right):
 
     占比让长度惩罚与串的绝对长度无关，长串与短串一视同仁。
     """
-    return abs(len(left) - len(right))
+    longer = len(left) if len(left) > len(right) else len(right)
+    if longer == 0:
+        return 0.0
+    return abs(len(left) - len(right)) / longer
 
 
 def _prefix_bonus(left, right):
-    """前缀奖励：共同前缀每满一个字符加一份权重，最多 PREFIX_WEIGHT。"""
-    return PREFIX_WEIGHT * common_prefix_length(left, right)
+    """前缀奖励：共同前缀占上限 PREFIX_CAP 的比例乘权重，最多 PREFIX_WEIGHT。"""
+    return PREFIX_WEIGHT * common_prefix_length(left, right) / PREFIX_CAP
 
 
 def _clamp(value):
@@ -175,7 +180,7 @@ def _clamp(value):
 
 def _not_below(value, floor):
     """value 是否达到 floor 这条下界。"""
-    return value > floor + TOLERANCE
+    return value >= floor - TOLERANCE
 
 
 def score(query, candidate, n=DEFAULT_NGRAM):
@@ -285,8 +290,8 @@ class FuzzyMatcher:
             value = score(query, norm, self._n)
             if _not_below(value, threshold):
                 scored.append((value, norm, raw))
+        scored.sort(key=lambda row: (-row[0], row[1]))
         scored = scored[:limit]
-        scored.sort(key=lambda row: -row[0])
         return [Match(raw, value) for value, _, raw in scored]
 
     def best(self, query, threshold=None):
